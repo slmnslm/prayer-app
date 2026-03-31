@@ -5,20 +5,80 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Salat & Iqama Timings</title>
   <style>
-    body { font-family: 'Segoe UI', Arial, sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); margin:0; padding:20px; color:#333; }
-    .container { max-width:680px; margin:0 auto; background:white; padding:25px; border-radius:16px; box-shadow:0 10px 30px rgba(0,0,0,0.1); }
-    h1 { text-align:center; color:#2c3e50; }
-    .location-display { text-align:center; font-size:18px; color:#2c3e50; margin:15px 0; font-weight:500; }
-    .gps-btn { background:#27ae60; color:white; border:none; padding:10px 18px; border-radius:8px; cursor:pointer; margin-top:8px; }
-    .next-prayer-box { background:#e8f4fd; border:3px solid #3498db; border-radius:12px; padding:20px; text-align:center; margin:25px 0; }
-    .next-prayer-box.near { background:#d4edda; border-color:#27ae60; animation:pulse 2s infinite; }
-    @keyframes pulse { 0%,100% { transform:scale(1); } 50% { transform:scale(1.03); } }
-    .countdown { font-size:32px; font-weight:bold; color:#2c3e50; margin:12px 0; }
-    .timings { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:20px; }
-    .prayer { background:#f8f9fa; padding:15px; border-radius:10px; text-align:center; }
-    .prayer.current { background:#d5f4e6; border:2px solid #27ae60; transform:scale(1.04); }
-    .admin-link { text-align:center; margin:25px 0; }
-    .note { font-size:13px; color:#7f8c8d; text-align:center; margin-top:30px; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+      margin: 0;
+      padding: 20px;
+      color: #333;
+    }
+    .container {
+      max-width: 680px;
+      margin: 0 auto;
+      background: white;
+      padding: 25px;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    }
+    h1 { text-align: center; color: #2c3e50; margin-bottom: 5px; }
+    .location-display {
+      text-align: center;
+      font-size: 18px;
+      color: #2c3e50;
+      margin: 15px 0;
+      font-weight: 500;
+    }
+    .gps-btn {
+      background: #27ae60;
+      color: white;
+      border: none;
+      padding: 10px 18px;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    .next-prayer-box {
+      background: #e8f4fd;
+      border: 3px solid #3498db;
+      border-radius: 12px;
+      padding: 20px;
+      text-align: center;
+      margin: 25px 0;
+      transition: all 0.4s;
+    }
+    .next-prayer-box.near {
+      background: #d4edda;
+      border-color: #27ae60;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.03); } }
+    .countdown {
+      font-size: 32px;
+      font-weight: bold;
+      color: #2c3e50;
+      margin: 12px 0;
+    }
+    .timings {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 20px;
+    }
+    .prayer {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 10px;
+      text-align: center;
+      transition: all 0.3s;
+    }
+    .prayer.current {
+      background: #d5f4e6;
+      border: 2px solid #27ae60;
+      transform: scale(1.04);
+    }
+    .prayer-name { font-weight: bold; color: #2c3e50; margin-bottom: 8px; }
+    .admin-link { text-align: center; margin: 25px 0; }
+    .note { font-size: 13px; color: #7f8c8d; text-align: center; margin-top: 30px; }
   </style>
 </head>
 <body>
@@ -26,7 +86,7 @@
     <h1>Salat & Iqama Timings</h1>
     
     <div class="location-display">
-      📍 <span id="currentLocation">Oakville, Canada</span><br>
+      📍 <span id="currentLocation">Loading location...</span><br>
       <button class="gps-btn" onclick="getUserLocation()">📍 Use My Current Location</button>
     </div>
 
@@ -54,6 +114,7 @@
     let currentCountry = "Canada";
     let currentMethod = 2;
 
+    // Load saved settings from backend
     async function loadSettings() {
       try {
         const res = await fetch('/api/settings');
@@ -62,25 +123,30 @@
         currentCountry = data.country || "Canada";
         currentMethod = data.method || 2;
         document.getElementById('currentLocation').textContent = `${currentCity}, ${currentCountry}`;
-      } catch(e) {}
-    }
-
-    async function getUserLocation() {
-      if (!navigator.geolocation) return alert("Geolocation not supported");
-      try {
-        navigator.geolocation.getCurrentPosition(() => {
-          alert("Location detected! You can set your preferred city in the Admin Panel.");
-        });
-      } catch(err) {
-        alert("Could not get location. Please set it manually in Admin.");
+      } catch (e) {
+        document.getElementById('currentLocation').textContent = "Oakville, Canada";
       }
     }
 
+    // Get user location (GPS)
+    function getUserLocation() {
+      if (!navigator.geolocation) {
+        alert("Geolocation is not supported by your browser.");
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        () => alert("Location detected! You can set your preferred city and country in the Admin Panel."),
+        () => alert("Unable to get your location. Please set it in the Admin Panel.")
+      );
+    }
+
+    // Fetch and display timings
     async function fetchTimings() {
       try {
         const url = `https://api.aladhan.com/v1/timingsByCity?city=${encodeURIComponent(currentCity)}&country=${encodeURIComponent(currentCountry)}&method=${currentMethod}`;
         const res = await fetch(url);
         const data = await res.json();
+
         if (data.code !== 200) throw new Error("Failed to fetch timings");
 
         const timings = data.data.timings;
@@ -90,19 +156,60 @@
 
         displayTimings(timings, iqama);
       } catch (err) {
-        console.error(err);
+        console.error("Error fetching timings:", err);
+        document.getElementById('timings').innerHTML = `<div style="text-align:center; padding:20px;">Failed to load prayer times. Please check your connection.</div>`;
       }
     }
 
     function displayTimings(timings, iqama) {
-      // Your existing display logic here (same as before)
-      // ... (keep your current displayTimings and countdown code)
-      // For brevity, I'm assuming you can merge it with your previous version
+      const container = document.getElementById('timings');
+      container.innerHTML = '';
+      const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+
+      const prayers = ['Fajr', 'Sunrise', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+
+      prayers.forEach(prayer => {
+        const div = document.createElement('div');
+        div.className = 'prayer';
+        const salat = timings[prayer] || '—';
+        const iqamaTime = iqama[prayer] || '—';
+
+        if (salat !== '—') {
+          const salatMin = timeToMinutes(salat);
+          if (salatMin >= nowMin - 15 && salatMin <= nowMin + 45) {
+            div.classList.add('current');
+          }
+        }
+
+        div.innerHTML = `
+          <div class="prayer-name">${prayer}</div>
+          <div class="salat-time">Adhan: ${salat}</div>
+          <div class="iqama-time">Iqama: ${iqamaTime}</div>
+        `;
+        container.appendChild(div);
+      });
+
+      updateCountdown(timings, iqama);
     }
 
-    window.onload = () => {
-      loadSettings().then(() => fetchTimings());
-      setInterval(updateCountdown, 1000);
+    function timeToMinutes(t) {
+      if (!t || t === '—') return 0;
+      const [h, m] = t.split(':').map(Number);
+      return h * 60 + m;
+    }
+
+    function updateCountdown(timings, iqama) {
+      // Simple version - you can expand later
+      const nextBox = document.getElementById('nextPrayerBox');
+      // For now, just show "Next Iqama" placeholder
+      document.getElementById('nextPrayerName').textContent = "Loading...";
+    }
+
+    // Initialize
+    window.onload = async () => {
+      await loadSettings();
+      await fetchTimings();
+      setInterval(() => fetchTimings(), 300000); // Refresh every 5 minutes
     };
   </script>
 </body>
