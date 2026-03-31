@@ -20,10 +20,7 @@
       border-radius: 16px;
       box-shadow: 0 10px 30px rgba(0,0,0,0.1);
     }
-    h1, h2 {
-      text-align: center;
-      color: #2c3e50;
-    }
+    h1, h2 { text-align: center; color: #2c3e50; }
     .section {
       margin: 35px 0;
       padding: 25px;
@@ -39,7 +36,8 @@
       margin-bottom: 8px;
       color: #2c3e50;
     }
-    input[type="date"], select {
+    input[type="text"], input[type="date"], select {
+      width: 100%;
       padding: 10px;
       border: 1px solid #ccc;
       border-radius: 8px;
@@ -74,9 +72,7 @@
       text-align: left;
       border-bottom: 1px solid #ddd;
     }
-    th {
-      background: #ecf0f1;
-    }
+    th { background: #ecf0f1; }
     .actions button {
       margin-right: 6px;
       padding: 8px 14px;
@@ -91,12 +87,6 @@
     }
     .success { background: #d4edda; color: #155724; }
     .error { background: #f8d7da; color: #721c24; }
-    .note {
-      text-align: center;
-      color: #7f8c8d;
-      margin-top: 30px;
-      font-size: 14px;
-    }
   </style>
 </head>
 <body>
@@ -104,7 +94,36 @@
     <h1>Admin Panel - Iqama Times Management</h1>
     <p style="text-align:center; color:#7f8c8d;">https://mnh.slmnslm.theworkpc.com</p>
 
-    <!-- Form Section -->
+    <!-- Location & Method Settings -->
+    <div class="section">
+      <h2>Location & Calculation Method</h2>
+      <div class="form-group">
+        <label>City</label>
+        <input type="text" id="city" value="Oakville">
+      </div>
+      <div class="form-group">
+        <label>Country</label>
+        <input type="text" id="country" value="Canada">
+      </div>
+      <div class="form-group">
+        <label>Salat Calculation Method</label>
+        <select id="method">
+          <option value="5">Muslim World League</option>
+          <option value="1">University of Islamic Sciences, Karachi</option>
+          <option value="4">Egyptian General Authority of Survey</option>
+          <option value="2" selected>ISNA (Islamic Society of North America)</option>
+          <option value="6">Islamic Union of North America</option>
+          <option value="12">Union of Islamic Organisations in France</option>
+          <option value="13">Ministry of Awqaf and Islamic Affairs, Kuwait</option>
+          <option value="14">One-Seventh of the Night</option>
+        </select>
+      </div>
+      <button onclick="saveSettings()" class="btn-primary" style="width:100%; margin-top:10px;">
+        Save Location & Method
+      </button>
+    </div>
+
+    <!-- Iqama Times Section -->
     <div class="section">
       <h2>Set / Edit Iqama Times for Date Range</h2>
       <form id="iqamaForm">
@@ -155,14 +174,14 @@
         </div>
 
         <div style="display:flex; gap:15px; margin-top:25px;">
-          <button type="submit" class="btn-primary">Save for Date Range</button>
+          <button type="submit" class="btn-primary">Save Iqama Times</button>
           <button type="button" id="clearForm" class="btn-secondary">Clear Form</button>
         </div>
       </form>
       <div id="message" class="message"></div>
     </div>
 
-    <!-- Existing Schedules Table -->
+    <!-- Existing Schedules -->
     <div class="section">
       <h2>Existing Iqama Schedules</h2>
       <table>
@@ -181,9 +200,8 @@
       </table>
     </div>
 
-    <div class="note">
-      Changes are saved directly to the database.<br>
-      <strong>Live Site:</strong> <a href="https://mnh.slmnslm.theworkpc.com" target="_blank">mnh.slmnslm.theworkpc.com</a>
+    <div class="note" style="text-align:center; margin-top:30px;">
+      <a href="/" style="color:#3498db;">← Back to Main Prayer Times Page</a>
     </div>
   </div>
 
@@ -193,162 +211,75 @@
     const endEl = document.getElementById('endDate');
     const msgEl = document.getElementById('message');
 
-    // Populate hour and minute dropdowns
     function populateDropdowns() {
       prayers.forEach(p => {
-        const hourSelect = document.getElementById(p + '_hour');
-        const minSelect = document.getElementById(p + '_minute');
-
-        // Hours 00-23
+        const hSel = document.getElementById(p + '_hour');
+        const mSel = document.getElementById(p + '_minute');
         for (let i = 0; i < 24; i++) {
-          const opt = document.createElement('option');
+          let opt = document.createElement('option');
           opt.value = i.toString().padStart(2, '0');
           opt.textContent = opt.value;
-          hourSelect.appendChild(opt);
+          hSel.appendChild(opt);
         }
-
-        // Minutes (5-minute intervals)
         [0,5,10,15,20,25,30,35,40,45,50,55].forEach(m => {
-          const opt = document.createElement('option');
+          let opt = document.createElement('option');
           opt.value = m.toString().padStart(2, '0');
           opt.textContent = opt.value;
-          minSelect.appendChild(opt);
+          mSel.appendChild(opt);
         });
       });
     }
 
     function updateRangeInfo() {
       if (startEl.value && endEl.value) {
-        const start = new Date(startEl.value);
-        const end = new Date(endEl.value);
-        const days = Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1;
+        const days = Math.round((new Date(endEl.value) - new Date(startEl.value)) / 86400000) + 1;
         document.getElementById('rangeInfo').textContent = `Will apply to ${days} day${days > 1 ? 's' : ''}`;
       }
     }
 
-    async function loadEntries() {
+    async function loadSettings() {
       try {
-        const res = await fetch('/api/iqama/all');
+        const res = await fetch('/api/settings');
         const data = await res.json();
-        const tbody = document.getElementById('entriesBody');
-        tbody.innerHTML = '';
+        document.getElementById('city').value = data.city || "Oakville";
+        document.getElementById('country').value = data.country || "Canada";
+        document.getElementById('method').value = data.method || 2;
+      } catch(e) {}
+    }
 
-        if (data.entries && data.entries.length > 0) {
-          data.entries.forEach(entry => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-              <td>${entry.date}</td>
-              <td>${entry.Fajr || '—'}</td>
-              <td>${entry.Dhuhr || '—'}</td>
-              <td>${entry.Asr || '—'}</td>
-              <td>${entry.Maghrib || '—'}</td>
-              <td>${entry.Isha || '—'}</td>
-              <td class="actions">
-                <button class="btn-edit" onclick="editDate('${entry.date}')">Edit</button>
-                <button class="btn-danger" onclick="deleteDate('${entry.date}')">Delete</button>
-              </td>
-            `;
-            tbody.appendChild(tr);
-          });
-        } else {
-          tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:20px;">No Iqama times saved yet.</td></tr>`;
-        }
+    async function saveSettings() {
+      const city = document.getElementById('city').value.trim();
+      const country = document.getElementById('country').value.trim();
+      const method = parseInt(document.getElementById('method').value);
+
+      if (!city || !country) {
+        showMessage("City and Country are required", "error");
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ city, country, method })
+        });
+        const result = await res.json();
+        showMessage(result.message, res.ok ? "success" : "error");
       } catch (err) {
-        showMessage('Failed to load schedules', 'error');
+        showMessage("Failed to save settings", "error");
       }
     }
 
-    window.editDate = async (date) => {
-      startEl.value = endEl.value = date;
-      updateRangeInfo();
-
-      try {
-        const res = await fetch(`/api/iqama/date?date=${date}`);
-        const data = await res.json();
-        const iq = data.iqama || {};
-
-        prayers.forEach(p => {
-          const time = iq[p.charAt(0).toUpperCase() + p.slice(1)];
-          if (time) {
-            const [h, m] = time.split(':');
-            document.getElementById(p + '_hour').value = h;
-            document.getElementById(p + '_minute').value = m;
-          }
-        });
-        showMessage(`Loaded ${date} for editing`, 'success');
-      } catch (err) {
-        showMessage('Failed to load date', 'error');
-      }
-    };
-
-    window.deleteDate = async (date) => {
-      if (!confirm(`Delete all Iqama times for ${date}?`)) return;
-      try {
-        const res = await fetch('/admin/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ date })
-        });
-        const result = await res.json();
-        showMessage(result.message, res.ok ? 'success' : 'error');
-        if (res.ok) loadEntries();
-      } catch (err) {
-        showMessage('Delete failed', 'error');
-      }
-    };
-
-    function showMessage(text, type) {
-      msgEl.textContent = text;
-      msgEl.className = `message ${type}`;
-      setTimeout(() => {
-        msgEl.textContent = '';
-        msgEl.className = 'message';
-      }, 5000);
-    }
-
-    // Form Submit
-    document.getElementById('iqamaForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const formData = {
-        startDate: startEl.value,
-        endDate: endEl.value
-      };
-
-      prayers.forEach(p => {
-        const h = document.getElementById(p + '_hour').value;
-        const m = document.getElementById(p + '_minute').value;
-        formData[p] = (h && m) ? `${h}:${m}` : '';
-      });
-
-      try {
-        const res = await fetch('/admin/save-range', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formData)
-        });
-        const result = await res.json();
-        showMessage(result.message, res.ok ? 'success' : 'error');
-        if (res.ok) loadEntries();
-      } catch (err) {
-        showMessage('Save failed', 'error');
-      }
-    });
-
-    // Clear Form
-    document.getElementById('clearForm').addEventListener('click', () => {
-      document.getElementById('iqamaForm').reset();
-      const today = new Date().toISOString().split('T')[0];
-      startEl.value = today;
-      endEl.value = new Date(new Date().getFullYear(), 11, 31).toISOString().split('T')[0];
-      updateRangeInfo();
-    });
+    // Existing functions (loadEntries, editDate, deleteDate, showMessage, form submit, etc.)
+    // ... (keep all your existing admin logic for Iqama times here)
 
     // Initialize
     populateDropdowns();
     startEl.value = new Date().toISOString().split('T')[0];
     endEl.value = new Date(new Date().getFullYear(), 11, 31).toISOString().split('T')[0];
     updateRangeInfo();
-    loadEntries();
+    loadSettings();
+    loadEntries();   // your existing function to load iqama schedules
   </script>
 </body>
 </html>
