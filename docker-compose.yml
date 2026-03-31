@@ -5,4 +5,12 @@ services:
     restart: unless-stopped
     ports:
       - "3030:3030"
-    # Environment variables will be injected by Dokploy
+    environment:
+      - NODE_ENV=production
+      - PORT=3030
+      # Database configuration will be injected from Dokploy Environment Variables
+      - DB_HOST
+      - DB_PORT
+      - DB_USER
+      - DB_PASSWORD
+      - DB_NAME
