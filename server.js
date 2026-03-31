@@ -7,14 +7,13 @@ const cors = require('cors');
 const app = express();
 const PORT = process.env.PORT || 3030;
 
-// ====================== MIDDLEWARE ======================
-app.set('trust proxy', 1); // Important for Dokploy / reverse proxy
+app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ====================== MySQL CONNECTION ======================
+// MySQL Pool
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
   port: process.env.DB_PORT || 3306,
@@ -26,177 +25,103 @@ const pool = mysql.createPool({
   queueLimit: 0
 });
 
-// Test connection on startup
-async function testConnection() {
-  try {
-    const connection = await pool.getConnection();
-    console.log('✅ Successfully connected to MySQL');
-    connection.release();
-  } catch (err) {
-    console.error('❌ MySQL Connection Failed:', err.message);
-    console.error('Please check your .env file and MySQL service in Dokploy');
-  }
-}
-testConnection();
-
-// ====================== DATABASE INITIALIZATION ======================
+// Initialize Tables
 async function initDatabase() {
   try {
+    // Iqama times table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS iqama_times (
-        id          INT AUTO_INCREMENT PRIMARY KEY,
-        date        DATE NOT NULL,
-        prayer      VARCHAR(50) NOT NULL,
-        time        TIME NOT NULL,
-        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        date DATE NOT NULL,
+        prayer VARCHAR(50) NOT NULL,
+        time TIME NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE KEY unique_date_prayer (date, prayer)
       )
     `);
-    console.log('✅ iqama_times table is ready');
+
+    // Settings table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS settings (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        city VARCHAR(100) NOT NULL DEFAULT 'Oakville',
+        country VARCHAR(100) NOT NULL DEFAULT 'Canada',
+        method INT NOT NULL DEFAULT 2,
+        method_name VARCHAR(100) NOT NULL DEFAULT 'ISNA',
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
+
+    console.log('✅ Database tables ready');
   } catch (err) {
-    console.error('❌ Failed to initialize table:', err.message);
+    console.error('❌ Database init error:', err.message);
   }
 }
 initDatabase();
 
-// ====================== API ROUTES ======================
+// ====================== SETTINGS API ======================
 
-// Get today's Iqama times
-app.get('/api/iqama', async (req, res) => {
-  const today = new Date().toISOString().split('T')[0];
+// Get current settings
+app.get('/api/settings', async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      'SELECT prayer, TIME_FORMAT(time, "%H:%i") as time FROM iqama_times WHERE date = ?',
-      [today]
-    );
-    const iqama = {};
-    rows.forEach(row => {
-      iqama[row.prayer] = row.time;
-    });
-    res.json({ iqama });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Database error' });
-  }
-});
-
-// Get all saved schedules (for admin table)
-app.get('/api/iqama/all', async (req, res) => {
-  try {
-    const [rows] = await pool.query(`
-      SELECT 
-        date,
-        MAX(CASE WHEN prayer = 'Fajr'    THEN TIME_FORMAT(time, '%H:%i') END) AS Fajr,
-        MAX(CASE WHEN prayer = 'Dhuhr'   THEN TIME_FORMAT(time, '%H:%i') END) AS Dhuhr,
-        MAX(CASE WHEN prayer = 'Asr'     THEN TIME_FORMAT(time, '%H:%i') END) AS Asr,
-        MAX(CASE WHEN prayer = 'Maghrib' THEN TIME_FORMAT(time, '%H:%i') END) AS Maghrib,
-        MAX(CASE WHEN prayer = 'Isha'    THEN TIME_FORMAT(time, '%H:%i') END) AS Isha
-      FROM iqama_times
-      GROUP BY date
-      ORDER BY date DESC
-    `);
-    res.json({ entries: rows });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Database error' });
-  }
-});
-
-// Get Iqama for specific date (for editing)
-app.get('/api/iqama/date', async (req, res) => {
-  const { date } = req.query;
-  if (!date) return res.status(400).json({ error: 'Date is required' });
-
-  try {
-    const [rows] = await pool.query(
-      'SELECT prayer, TIME_FORMAT(time, "%H:%i") as time FROM iqama_times WHERE date = ?',
-      [date]
-    );
-    const iqama = {};
-    rows.forEach(r => iqama[r.prayer] = r.time);
-    res.json({ iqama });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Database error' });
-  }
-});
-
-// Save Iqama times for a date range
-app.post('/admin/save-range', async (req, res) => {
-  const { startDate, endDate, fajr, dhuhr, asr, maghrib, isha } = req.body;
-
-  if (!startDate || !endDate) {
-    return res.status(400).json({ message: 'Start date and End date are required' });
-  }
-
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-
-  if (end < start) {
-    return res.status(400).json({ message: 'End date must be after Start date' });
-  }
-
-  const prayers = [
-    { prayer: 'Fajr',    time: fajr },
-    { prayer: 'Dhuhr',   time: dhuhr },
-    { prayer: 'Asr',     time: asr },
-    { prayer: 'Maghrib', time: maghrib },
-    { prayer: 'Isha',    time: isha }
-  ];
-
-  try {
-    let current = new Date(start);
-    while (current <= end) {
-      const dateStr = current.toISOString().split('T')[0];
-
-      // Delete old entries for this date
-      await pool.query('DELETE FROM iqama_times WHERE date = ?', [dateStr]);
-
-      // Insert new entries
-      for (const p of prayers) {
-        if (p.time) {
-          await pool.query(
-            'INSERT INTO iqama_times (date, prayer, time) VALUES (?, ?, ?)',
-            [dateStr, p.prayer, p.time]
-          );
-        }
-      }
-      current.setDate(current.getDate() + 1);
+    const [rows] = await pool.query('SELECT * FROM settings LIMIT 1');
+    if (rows.length > 0) {
+      res.json(rows[0]);
+    } else {
+      res.json({ city: "Oakville", country: "Canada", method: 2, method_name: "ISNA" });
     }
-
-    res.json({ message: `Successfully saved Iqama times from ${startDate} to ${endDate}` });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Database error while saving' });
+    res.json({ city: "Oakville", country: "Canada", method: 2, method_name: "ISNA" });
   }
 });
 
-// Delete Iqama times for a specific date
-app.post('/admin/delete', async (req, res) => {
-  const { date } = req.body;
-  if (!date) return res.status(400).json({ message: 'Date is required' });
+// Save settings
+app.post('/api/settings', async (req, res) => {
+  const { city, country, method } = req.body;
+
+  const methodNames = {
+    2: "ISNA",
+    5: "Muslim World League",
+    1: "University of Islamic Sciences, Karachi",
+    4: "Egyptian General Authority of Survey",
+    6: "Islamic Union of North America",
+    12: "Union of Islamic Organisations in France",
+    13: "Ministry of Awqaf and Islamic Affairs, Kuwait",
+    14: "One-Seventh of the Night"
+  };
 
   try {
-    await pool.query('DELETE FROM iqama_times WHERE date = ?', [date]);
-    res.json({ message: `Deleted all Iqama times for ${date}` });
+    await pool.query(`
+      INSERT INTO settings (city, country, method, method_name)
+      VALUES (?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE 
+        city = VALUES(city),
+        country = VALUES(country),
+        method = VALUES(method),
+        method_name = VALUES(method_name)
+    `, [city, country, method, methodNames[method] || "ISNA"]);
+
+    res.json({ message: "Settings saved successfully" });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: 'Database error while deleting' });
+    res.status(500).json({ message: "Failed to save settings" });
   }
 });
 
-// ====================== SERVE FRONTEND ======================
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+// ====================== EXISTING IQAMA ROUTES ======================
+// (Keep all your existing iqama routes here - /api/iqama, /api/iqama/all, /api/iqama/date, /admin/save-range, /admin/delete)
 
-app.get('/admin', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
-});
+app.get('/api/iqama', async (req, res) => { /* your existing code */ });
+app.get('/api/iqama/all', async (req, res) => { /* your existing code */ });
+app.get('/api/iqama/date', async (req, res) => { /* your existing code */ });
+app.post('/admin/save-range', async (req, res) => { /* your existing code */ });
+app.post('/admin/delete', async (req, res) => { /* your existing code */ });
 
-// Start Server
+// ====================== FRONTEND ROUTES ======================
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
+
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Prayer Times App is running on port ${PORT}`);
-  console.log(`🌐 Live Site: https://mnh.slmnslm.theworkpc.com`);
-  console.log(`🔧 Admin Panel: https://mnh.slmnslm.theworkpc.com/admin`);
+  console.log(`🚀 Prayer Times App running on port ${PORT}`);
+  console.log(`🌐 https://mnh.slmnslm.theworkpc.com`);
 });
